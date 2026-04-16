@@ -1,13 +1,11 @@
 // ============================================
-// DEV-X PRO - Professional Developer Suite
+// DEV-X PRO - Web & Tools Generator
 // Developer: @Mrddev | Telegram: @devxtechzone
 // ============================================
 
 const express = require('express');
-const mongoose = require('mongoose');
 const archiver = require('archiver');
 const axios = require('axios');
-const cors = require('cors');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
@@ -16,40 +14,23 @@ require('dotenv').config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // File upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-// MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://mrdev:dev091339@cluster0.grjlq7v.mongodb.net/devx_pro';
-mongoose.connect(MONGODB_URI).then(() => console.log('✅ MongoDB connected'));
+const sessions = new Map();
 
-// Schemas
-const ProjectSchema = new mongoose.Schema({
-    projectId: String, userId: String, toolType: String, title: String,
-    files: Object, uploadedFiles: Array, downloadCount: { type: Number, default: 0 },
-    createdAt: { type: Date, default: Date.now }
-});
-const SessionSchema = new mongoose.Schema({
-    sessionId: String, toolType: String, description: String, generatedCode: Object,
-    uploadedFiles: Array, status: String, createdAt: { type: Date, default: Date.now, expires: 3600 }
-});
-
-const Project = mongoose.model('Project', ProjectSchema);
-const Session = mongoose.model('Session', SessionSchema);
-
-// AI Engine
-const AI_API_URL = process.env.AI_API_URL || 'https://api.dev-x.com/v1/chat/completions';
-const AI_API_KEY = process.env.AI_API_KEY || 'devx-k9v41ybg64exej9lkkovg5dof00ep3yr';
+// AI API
+const AI_API_URL = process.env.AI_API_URL;
+const AI_API_KEY = process.env.AI_API_KEY;
 
 async function callAI(prompt) {
     try {
@@ -58,16 +39,38 @@ async function callAI(prompt) {
             messages: [{ role: "user", content: prompt }],
             temperature: 0.7,
             max_tokens: 4000
-        }, { headers: { 'Authorization': `Bearer ${AI_API_KEY}` } });
+        }, {
+            headers: { 
+                'Authorization': `Bearer ${AI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
         return response.data.choices[0].message.content;
     } catch (error) {
+        console.error('AI Error:', error.message);
         return null;
     }
 }
 
-function generateFallback(toolType, description) {
+async function generateProject(description, toolType) {
+    const prompt = `Create a professional ${toolType} based on: "${description}"
+
+Generate complete HTML/CSS/JS code. Modern, responsive, clean design.
+Return ONLY valid HTML starting with <!DOCTYPE html>`;
+
+    const aiCode = await callAI(prompt);
+    
+    if (aiCode && aiCode.includes('<!DOCTYPE html>')) {
+        return {
+            title: `${toolType}`,
+            files: { "index.html": aiCode },
+            instructions: "Open index.html in browser"
+        };
+    }
+    
     return {
-        title: `${toolType}`,
+        title: toolType,
         files: {
             "index.html": `<!DOCTYPE html>
 <html lang="en">
@@ -79,42 +82,39 @@ function generateFallback(toolType, description) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: #0a0a0f;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            color: #e2e2e2;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #e4e4e7;
             line-height: 1.6;
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-        header { border-bottom: 1px solid #1e1e2a; padding-bottom: 1rem; margin-bottom: 2rem; }
-        h1 { font-size: 1.8rem; font-weight: 600; color: #fff; }
+        header { border-bottom: 1px solid #27272a; padding-bottom: 1rem; margin-bottom: 2rem; }
+        h1 { font-size: 2rem; font-weight: 600; }
         .btn {
-            background: #2d2d3a;
-            border: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
-            color: #fff;
+            background: #3b82f6;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
             cursor: pointer;
-            font-size: 0.9rem;
+            display: inline-block;
+            margin-top: 1rem;
         }
-        .btn-primary { background: #3b82f6; }
         footer {
-            border-top: 1px solid #1e1e2a;
+            border-top: 1px solid #27272a;
             margin-top: 3rem;
             padding-top: 1rem;
             text-align: center;
-            font-size: 0.8rem;
-            color: #6b7280;
+            font-size: 0.875rem;
+            color: #71717a;
         }
         a { color: #3b82f6; text-decoration: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>${toolType}</h1>
-        </header>
+        <header><h1>${toolType}</h1></header>
         <main>
-            <p>${description || 'Professional solution generated by Dev-X Pro.'}</p>
-            <button class="btn btn-primary" onclick="alert('Ready')">Launch</button>
+            <p>${description}</p>
+            <button class="btn" onclick="alert('Ready')">Launch</button>
         </main>
         <footer>
             <p>Dev-X Pro | <a href="https://t.me/devxtechzone">@devxtechzone</a></p>
@@ -129,31 +129,20 @@ function generateFallback(toolType, description) {
 
 // API Routes
 app.get('/api/tools', (req, res) => {
-    res.json([
-        "React App", "Node.js API", "Telegram Bot", "Discord Bot", 
-        "Chrome Extension", "Web Scraper", "Admin Dashboard", "Portfolio",
-        "E-commerce", "Landing Page", "REST API", "GraphQL API",
-        "WhatsApp Bot", "VS Code Extension", "Python Script", "CLI Tool"
-    ]);
+    res.json(["Website", "Landing Page", "Portfolio", "Admin Dashboard", "REST API", "Telegram Bot", "Discord Bot", "Chrome Extension", "React App", "Node.js API"]);
 });
 
 app.post('/api/upload/:sessionId', upload.array('files', 20), async (req, res) => {
     const { sessionId } = req.params;
-    const uploadedFiles = req.files.map(f => ({ originalname: f.originalname, filename: f.filename, path: f.path, size: f.size }));
-    
-    let session = await Session.findOne({ sessionId });
-    if (session) {
-        session.uploadedFiles = [...(session.uploadedFiles || []), ...uploadedFiles];
-        await session.save();
-    } else {
-        const newSession = new Session({ sessionId, uploadedFiles, status: 'uploading' });
-        await newSession.save();
-    }
+    const uploadedFiles = req.files.map(f => ({ originalname: f.originalname, filename: f.filename, path: f.path }));
+    let session = sessions.get(sessionId) || {};
+    session.uploadedFiles = [...(session.uploadedFiles || []), ...uploadedFiles];
+    sessions.set(sessionId, session);
     res.json({ success: true, files: uploadedFiles });
 });
 
 app.post('/api/generate', async (req, res) => {
-    const { toolType, description, userId, sessionId } = req.body;
+    const { toolType, description, sessionId } = req.body;
     const finalSessionId = sessionId || uuidv4();
     
     if (!toolType || !description) {
@@ -161,24 +150,11 @@ app.post('/api/generate', async (req, res) => {
     }
     
     try {
-        let session = await Session.findOne({ sessionId: finalSessionId });
-        const uploadedFiles = session?.uploadedFiles || [];
-        
-        const generated = generateFallback(toolType, description);
-        
-        if (!session) {
-            session = new Session({ sessionId: finalSessionId, toolType, description, generatedCode: generated, uploadedFiles, status: 'completed' });
-        } else {
-            session.toolType = toolType;
-            session.description = description;
-            session.generatedCode = generated;
-            session.status = 'completed';
-        }
-        await session.save();
-        
-        const project = new Project({ projectId: finalSessionId, userId: userId || 'anonymous', toolType, title: generated.title, files: generated, uploadedFiles });
-        await project.save();
-        
+        const generated = await generateProject(description, toolType);
+        let session = sessions.get(finalSessionId) || {};
+        session.toolType = toolType;
+        session.generatedCode = generated;
+        sessions.set(finalSessionId, session);
         res.json({ success: true, sessionId: finalSessionId, project: generated });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -186,14 +162,14 @@ app.post('/api/generate', async (req, res) => {
 });
 
 app.get('/api/download/:sessionId', async (req, res) => {
-    const session = await Session.findOne({ sessionId: req.params.sessionId });
+    const session = sessions.get(req.params.sessionId);
     if (!session || !session.generatedCode) {
         return res.status(404).json({ error: "Project not found" });
     }
     
     const archive = archiver('zip', { zlib: { level: 9 } });
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename=devx-${session.toolType?.replace(/ /g, '-')}.zip`);
+    res.setHeader('Content-Disposition', `attachment; filename=devx-${session.toolType?.replace(/ /g, '-') || 'project'}.zip`);
     archive.pipe(res);
     
     const files = session.generatedCode.files || {};
@@ -201,7 +177,7 @@ app.get('/api/download/:sessionId', async (req, res) => {
         archive.append(content, { name: filename });
     }
     
-    if (session.uploadedFiles && session.uploadedFiles.length > 0) {
+    if (session.uploadedFiles) {
         for (const file of session.uploadedFiles) {
             const filePath = path.join(__dirname, 'uploads', file.filename);
             if (fs.existsSync(filePath)) {
@@ -211,10 +187,9 @@ app.get('/api/download/:sessionId', async (req, res) => {
     }
     
     await archive.finalize();
-    await Project.updateOne({ projectId: req.params.sessionId }, { $inc: { downloadCount: 1 } });
 });
 
-// Frontend
+// Frontend with Loading Animation
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -224,39 +199,114 @@ app.get('/', (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dev-X Pro | Developer Suite</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             background: #09090b;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #e4e4e7;
-            line-height: 1.5;
+            overflow-x: hidden;
         }
         
-        /* Layout */
+        /* ============ LOADING SCREEN ============ */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #09090b;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.8s ease, visibility 0.8s ease;
+        }
+        
+        .loading-screen.hide {
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .loader-container {
+            text-align: center;
+        }
+        
+        .loader-logo {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .loader-logo span {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .loader-bar {
+            width: 280px;
+            height: 2px;
+            background: #27272a;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 1rem auto;
+        }
+        
+        .loader-bar-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            animation: loadBar 2.5s ease forwards;
+        }
+        
+        @keyframes loadBar {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 100%; }
+        }
+        
+        .loader-text {
+            font-size: 0.875rem;
+            color: #71717a;
+            margin-top: 1rem;
+            font-family: monospace;
+        }
+        
+        .loader-dots::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+        
+        /* ============ MAIN CONTENT ============ */
         .app {
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            opacity: 0;
+            transition: opacity 0.5s ease;
         }
         
-        .container {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 1.5rem;
-            width: 100%;
+        .app.show {
+            opacity: 1;
         }
+        
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 1.5rem; width: 100%; }
         
         /* Header */
         .header {
             border-bottom: 1px solid #27272a;
             padding: 1rem 0;
             background: #09090b/80;
-            backdrop-filter: blur(8px);
             position: sticky;
             top: 0;
             z-index: 10;
@@ -271,48 +321,27 @@ app.get('/', (req, res) => {
         .logo h1 {
             font-size: 1.25rem;
             font-weight: 600;
-            letter-spacing: -0.01em;
         }
         
-        .logo span {
-            color: #3b82f6;
-        }
+        .logo span { color: #3b82f6; }
+        .logo p { font-size: 0.75rem; color: #71717a; }
         
-        .logo p {
-            font-size: 0.75rem;
-            color: #71717a;
-        }
-        
-        .social-links {
-            display: flex;
-            gap: 1rem;
-        }
-        
+        .social-links { display: flex; gap: 1rem; }
         .social-links a {
             color: #71717a;
             text-decoration: none;
             font-size: 0.875rem;
             transition: color 0.2s;
         }
-        
-        .social-links a:hover {
-            color: #3b82f6;
-        }
+        .social-links a:hover { color: #3b82f6; }
         
         /* Main */
-        .main {
-            flex: 1;
-            padding: 2rem 0;
-        }
+        .main { flex: 1; padding: 2rem 0; }
         
-        /* Tools Grid */
-        .tools-section {
-            margin-bottom: 2rem;
-        }
-        
+        /* Tools */
         .section-title {
-            font-size: 0.875rem;
-            font-weight: 500;
+            font-size: 0.75rem;
+            font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #71717a;
@@ -323,13 +352,14 @@ app.get('/', (req, res) => {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
             gap: 0.5rem;
+            margin-bottom: 2rem;
         }
         
         .tool-btn {
             background: #18181b;
             border: 1px solid #27272a;
             border-radius: 0.5rem;
-            padding: 0.625rem 1rem;
+            padding: 0.5rem 1rem;
             font-size: 0.875rem;
             font-weight: 500;
             color: #e4e4e7;
@@ -359,12 +389,15 @@ app.get('/', (req, res) => {
         }
         
         .card-title {
-            font-size: 1rem;
+            font-size: 0.875rem;
             font-weight: 600;
             margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #71717a;
         }
         
-        /* Upload Area */
+        /* Upload */
         .upload-area {
             border: 1px dashed #3b3b40;
             border-radius: 0.5rem;
@@ -372,12 +405,11 @@ app.get('/', (req, res) => {
             text-align: center;
             cursor: pointer;
             transition: all 0.2s;
-            margin-bottom: 1rem;
         }
         
         .upload-area:hover {
             border-color: #3b82f6;
-            background: #27272a/30;
+            background: rgba(59,130,246,0.05);
         }
         
         .file-list {
@@ -421,34 +453,21 @@ app.get('/', (req, res) => {
             color: white;
         }
         
-        .btn-primary:hover {
-            background: #2563eb;
-        }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
         
         .btn-secondary {
             background: #27272a;
             color: #e4e4e7;
         }
         
-        .btn-secondary:hover {
-            background: #3b3b40;
-        }
+        .btn-secondary:hover { background: #3b3b40; }
         
-        .btn-group {
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 1rem;
-        }
+        .btn-group { display: flex; gap: 0.75rem; margin-top: 1rem; }
         
         /* Result */
-        .result-card {
-            display: none;
-        }
-        
-        .result-card.show {
-            display: block;
-            animation: fadeIn 0.3s ease;
-        }
+        .result-card { display: none; }
+        .result-card.show { display: block; animation: fadeIn 0.3s ease; }
         
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
@@ -460,11 +479,47 @@ app.get('/', (req, res) => {
             border: 1px solid #27272a;
             border-radius: 0.5rem;
             padding: 1rem;
-            font-family: 'Monaco', 'Menlo', monospace;
+            font-family: monospace;
             font-size: 0.75rem;
             overflow-x: auto;
             margin: 1rem 0;
+            max-height: 200px;
         }
+        
+        /* Generation Overlay */
+        .gen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(9,9,11,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        
+        .gen-overlay.show { display: flex; }
+        
+        .gen-spinner {
+            width: 40px;
+            height: 40px;
+            border: 2px solid #27272a;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 1rem;
+        }
+        
+        .gen-text {
+            font-family: monospace;
+            font-size: 0.875rem;
+            color: #71717a;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
         
         /* Footer */
         .footer {
@@ -475,47 +530,32 @@ app.get('/', (req, res) => {
             color: #71717a;
         }
         
-        /* Loading Overlay */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(9, 9, 11, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            display: none;
-        }
-        
-        .loading-overlay.show {
-            display: flex;
-        }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 2px solid #27272a;
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        /* Responsive */
         @media (max-width: 768px) {
             .container { padding: 0 1rem; }
-            .tools-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+            .tools-grid { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
 <body>
-    <div class="app">
+    <!-- LOADING SCREEN -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loader-container">
+            <div class="loader-logo">DEV-X <span>PRO</span></div>
+            <div class="loader-bar">
+                <div class="loader-bar-fill"></div>
+            </div>
+            <div class="loader-text">Initializing<span class="loader-dots"></span></div>
+        </div>
+    </div>
+    
+    <!-- GENERATION OVERLAY -->
+    <div class="gen-overlay" id="genOverlay">
+        <div class="gen-spinner"></div>
+        <div class="gen-text" id="genText">Generating your project...</div>
+    </div>
+    
+    <!-- MAIN APP -->
+    <div class="app" id="app">
         <header class="header">
             <div class="container">
                 <div class="header-content">
@@ -533,10 +573,8 @@ app.get('/', (req, res) => {
         
         <main class="main">
             <div class="container">
-                <div class="tools-section">
-                    <div class="section-title">Development Tools</div>
-                    <div class="tools-grid" id="toolsGrid"></div>
-                </div>
+                <div class="section-title">Development Tools</div>
+                <div class="tools-grid" id="toolsGrid"></div>
                 
                 <div class="card">
                     <div class="card-title">Assets</div>
@@ -549,7 +587,7 @@ app.get('/', (req, res) => {
                 
                 <div class="card">
                     <div class="card-title">Project Description</div>
-                    <textarea id="description" rows="4" placeholder="Describe what you want to build...&#10;&#10;Example: A REST API with user authentication and database integration"></textarea>
+                    <textarea id="description" rows="4" placeholder="Describe what you want to build...&#10;&#10;Example: A modern portfolio website for a photographer with gallery and contact form"></textarea>
                     <button class="btn btn-primary" id="generateBtn">Generate Project</button>
                 </div>
                 
@@ -573,23 +611,20 @@ app.get('/', (req, res) => {
         </footer>
     </div>
     
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-    </div>
-    
     <script>
+        // Hide loading screen after animation
+        setTimeout(() => {
+            const loadingScreen = document.getElementById('loadingScreen');
+            loadingScreen.classList.add('hide');
+            document.getElementById('app').classList.add('show');
+        }, 2800);
+        
         let currentSessionId = null;
-        let selectedTool = "React App";
+        let selectedTool = "Website";
         let uploadedFiles = [];
         
-        const tools = [
-            "React App", "Node.js API", "Telegram Bot", "Discord Bot",
-            "Chrome Extension", "Web Scraper", "Admin Dashboard", "Portfolio",
-            "E-commerce", "Landing Page", "REST API", "GraphQL API",
-            "WhatsApp Bot", "Python Script", "CLI Tool", "VS Code Extension"
-        ];
+        const tools = ["Website", "Landing Page", "Portfolio", "Admin Dashboard", "REST API", "Telegram Bot", "Discord Bot", "Chrome Extension", "React App", "Node.js API"];
         
-        // Render tools
         const toolsGrid = document.getElementById('toolsGrid');
         tools.forEach(tool => {
             const btn = document.createElement('button');
@@ -613,8 +648,7 @@ app.get('/', (req, res) => {
         uploadArea.ondrop = async (e) => {
             e.preventDefault();
             uploadArea.style.borderColor = '#3b3b40';
-            const files = Array.from(e.dataTransfer.files);
-            await uploadFiles(files);
+            await uploadFiles(Array.from(e.dataTransfer.files));
         };
         
         fileInput.onchange = async (e) => await uploadFiles(Array.from(e.target.files));
@@ -636,7 +670,6 @@ app.get('/', (req, res) => {
             fileListDiv.innerHTML = uploadedFiles.map(f => \`📄 \${f.originalname}\`).join('<br>');
         }
         
-        // Generate
         async function generate() {
             const description = document.getElementById('description').value.trim();
             if (!description) {
@@ -645,11 +678,21 @@ app.get('/', (req, res) => {
             }
             
             const btn = document.getElementById('generateBtn');
-            const overlay = document.getElementById('loadingOverlay');
+            const overlay = document.getElementById('genOverlay');
+            const genText = document.getElementById('genText');
             
             btn.disabled = true;
             btn.textContent = 'Generating...';
             overlay.classList.add('show');
+            
+            const messages = ['Analyzing requirements...', 'Building structure...', 'Writing code...', 'Finalizing...'];
+            let msgIndex = 0;
+            const msgInterval = setInterval(() => {
+                if (msgIndex < messages.length) {
+                    genText.textContent = messages[msgIndex];
+                    msgIndex++;
+                }
+            }, 800);
             
             try {
                 const response = await fetch('/api/generate', {
@@ -658,12 +701,12 @@ app.get('/', (req, res) => {
                     body: JSON.stringify({
                         toolType: selectedTool,
                         description: description,
-                        userId: 'user_' + Date.now(),
                         sessionId: currentSessionId
                     })
                 });
                 
                 const data = await response.json();
+                clearInterval(msgInterval);
                 
                 if (data.success) {
                     currentSessionId = data.sessionId;
@@ -672,7 +715,7 @@ app.get('/', (req, res) => {
                     document.getElementById('resultTitle').textContent = \`\${selectedTool} - Ready\`;
                     document.getElementById('resultContent').innerHTML = \`
                         <div class="code-preview">
-                            <strong>Files generated:</strong> \${Object.keys(files).join(', ')}
+                            <strong>Files:</strong> \${Object.keys(files).join(', ')}
                         </div>
                         <p style="font-size:0.875rem; color:#71717a;">\${data.project.instructions || 'Download the ZIP file to get started.'}</p>
                     \`;
@@ -682,6 +725,7 @@ app.get('/', (req, res) => {
                     alert('Error: ' + data.error);
                 }
             } catch (error) {
+                clearInterval(msgInterval);
                 alert('Error: ' + error.message);
             } finally {
                 btn.disabled = false;
@@ -713,10 +757,9 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`\n✅ Dev-X Pro running at http://localhost:${PORT}\n`);
+    console.log(`\n✅ Dev-X Pro running at http://localhost:${PORT}`);
     console.log(`👨‍💻 Developer: @Mrddev`);
     console.log(`📱 Telegram: @devxtechzone\n`);
 });
